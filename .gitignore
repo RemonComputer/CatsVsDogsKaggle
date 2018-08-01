@@ -109,3 +109,6 @@ venv.bak/
 *.jpg
 *.jpeg
 *.png
+
+# VSCode Project files
+.vscode/
