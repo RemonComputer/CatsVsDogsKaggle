@@ -85,9 +85,7 @@ class CatsVsDogsDataset(Dataset):
 class Rescale(object):
     """This is a Transformation that rescale the image in a sample to a given size, This transformation should be applied to the ndarray.
     Args:
-        output_size (tuple or int): Desired output size. If tuple, output is
-            matched to output_size. If int, smaller of image edges is matched
-            to output_size keeping aspect ratio the same.
+        output_size (tuple or int): Desired output size.
     """
 
     def __init__(self, output_size):

@@ -112,3 +112,6 @@ venv.bak/
 
 # VSCode Project files
 .vscode/
+
+# Model Weights File
+*.pytorch 
