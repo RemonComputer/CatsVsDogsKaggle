@@ -40,7 +40,7 @@ class CatsVsDogsDataset(Dataset):
             #self.images = [io.imread(image_path) for image_path in images_paths]
             #if transform:
                 #self.images = [transform(image) for image in self.images]
-            self.labels = [ -1 for i in range(len(self.images))]
+            self.labels = [ -1 for i in range(len(self.images_paths))]
             print('Finished loading images')
             return
         dogs_images_paths = [os.path.join(images_folder_path, image_file_name) for image_file_name in os.listdir(images_folder_path) if 'dog' in image_file_name]
@@ -72,7 +72,7 @@ class CatsVsDogsDataset(Dataset):
         return len(self.images_paths)
 
     def __getitem__(self, idx):
-        image = io.imread(self.images_paths[i])
+        image = io.imread(self.images_paths[idx])
         label = self.labels[idx]
         if self.transform:
             image = self.transform(image)
