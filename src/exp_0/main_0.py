@@ -130,7 +130,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print('you are using the {}'.format(device))
     current_transform = transforms.Compose([Rescale(256)]) 
-    dataset = CatsVsDogsDataset('train', '../Dataset/', transform=current_transform)
+    dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=current_transform)
     future_transform = transforms.Compose([Rescale(256), Normalize(), ToTensor()])
     for i in range(5):
         (img, label) = dataset[i]

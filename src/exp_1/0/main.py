@@ -253,7 +253,7 @@ class Net(nn.Module):
         criterion = nn.CrossEntropyLoss()
         train_loader = DataLoader(train_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_load_workers)
         test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers = self.data_load_workers)
-        
+        # continue here
         
 
     def test(self, test_dataset, dataset_name = 'test', batch_size = 32):
@@ -302,7 +302,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print('you are using the {}'.format(device))
     current_transform = transforms.Compose([transforms.ToPILImage(), transforms.Grayscale(), transforms.Resize((256, 256), interpolation=PIL.Image.BILINEAR),transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]) #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
-    dataset = CatsVsDogsDataset('train', '../../Dataset/', transform=current_transform) 
+    dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=current_transform) 
     future_transform = current_transform
     trainloader = torch.utils.data.DataLoader(dataset, batch_size=1,
                                           shuffle=True, num_workers=2)
