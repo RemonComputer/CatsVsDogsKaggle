@@ -1,3 +1,6 @@
+import os
+import ntpath
+from itertools import cycle
 import cv2 as cv
 from sklearn.metrics import accuracy_score
 from skimage import io, transform
@@ -5,8 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas
 from pandas import DataFrame
-import os
-import ntpath
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -250,10 +251,57 @@ class Net(nn.Module):
 
     def train(self, optimizer, train_dataset, test_dataset, train_batch_size = 32, test_batch_size = 128, no_ephocs = 10, \
                 model_save_intervals_in_ephocs = 5, test_accuracy_interval_in_batches = 100):
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.BCELoss()
         train_loader = DataLoader(train_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_load_workers)
         test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers = self.data_load_workers)
-        # continue here
+        number_of_training_batches = len(train_loader)
+        test_iter = cycle(test_loader) # cyclic iterator
+        for epoch in range(no_ephocs):  # loop over the dataset multiple times
+            running_loss = 0.0
+            correct_training_example = 0.0
+            total_training_examples = 0.0
+            for i, data in enumerate(train_loader, 0):
+                # get the inputs
+                inputs, labels = data
+                # zero the parameter gradients
+                optimizer.zero_grad()
+                # forward + backward + optimize
+                outputs = self(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                # print statistics
+                running_loss += loss.item()
+                # calculate the acumulated training accuracy
+                predicted_labels = self.convert_probabilities_to_labels(outputs)
+                correct_training_example += (predicted_labels == labels).sum().item()
+                total_training_examples += labels.size(0)
+                if i % test_accuracy_interval_in_batches == 0 and i != 0:
+                    print('epoch: %d, batch: %5d' % (epoch + 1, i + 1))
+                    print('---------------------------')
+                    print('Training loss: %.3f' %
+                        (running_loss / test_accuracy_interval_in_batches))
+                    running_loss = 0.0
+                    print('Training Accuracy: {}%%'.format(correct_training_example * 100 / total_training_examples))
+                    correct_training_example = 0.0
+                    total_training_examples = 0.0
+                    with torch.no_grad():
+                        (test_inputs, test_labels) = test_iter.next()
+                        test_outputs = self(test_inputs)
+                        test_loss = criterion(test_outputs, test_labels) * train_batch_size / test_batch_size 
+                        print('Test loss: {:.3f}'.format())
+                        predicted_test_labels = self.convert_probabilities_to_labels(outputs)
+                        correct_test_labels = (test_labels == predicted_test_labels).sum().item()
+                        test_accuracy = correct_test_labels * 100 / test_labels.size(0)
+                        print('Test accuracy: {}%%'.format(test_accuracy))
+                    print('--------------------------------------------------------------------------------------------------------------------')
+            if epoch % model_save_intervals_in_ephocs == 0 and epoch != 0:
+                print('Saving model at {} at the end of epoch: {} .....'.format(self.model_file_path, epoch + 1))
+                state_dict = self.state_dict()
+                torch.save(state_dict, self.model_file_path)
+                print('Model Saved')
+                print('-----------------------------------------------------------------------------------------------------------')
+        print('Finished Training')
         
 
     def test(self, test_dataset, dataset_name = 'test', batch_size = 32):
@@ -271,7 +319,7 @@ class Net(nn.Module):
                 predicted_labels.extend(batch_outputs)
                 # end enumeration
            accuracy = accuracy_score(true_labels, predicted_labels) * 100
-           print('{} set accuracy: {}%'.format(dataset_name, accuracy))
+           print('{} set accuracy: {}%%'.format(dataset_name, accuracy))
            
 
     def generate_submission_file(self, submission_dataset, submission_file_path, batch_size = 32):
@@ -302,9 +350,9 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print('you are using the {}'.format(device))
     current_transform = transforms.Compose([transforms.ToPILImage(), transforms.Grayscale(), transforms.Resize((256, 256), interpolation=PIL.Image.BILINEAR),transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]) #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
-    dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=current_transform) 
+    train_dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=current_transform) 
     future_transform = current_transform
-    trainloader = torch.utils.data.DataLoader(dataset, batch_size=1,
+    trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=1,
                                           shuffle=True, num_workers=2)
     dataiter = iter(trainloader)
     class_labels = ['cat', 'dog']
@@ -313,3 +361,12 @@ if __name__ == '__main__':
         print('Current image: {}'.format(class_labels[labels[0]]))
         print('image type: {}'.format(type(imgs[0])))
         convert_image_from_tensor_and_display_it(imgs[0], 0.5, 0.5) #, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
+    #--------------------------------------------------------------------------------------------------------------
+    model = Net(model_file_path = 'model_state_dict.pytorch', reload_model=False, use_cuda_if_available=True)
+    train_dataset = CatsVsDogsDataset('test', '../../../Dataset/', transform=current_transform)
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    model.train(optimizer, train_dataset, test_dataset, train_batch_size = 32, test_batch_size = 128, no_ephocs = 10, model_save_intervals_in_ephocs = 2, test_accuracy_interval_in_batches = 100)
+    model.test(train_dataset, 'train', batch_size = 32)
+    model.test(test_dataset, 'test', batch_size = 32)
+    submission_dataset = CatsVsDogsDataset('submission', '../../../Dataset/', transform=current_transform)
+    model.generate_submission_file(submission_dataset, 'submission.csv')
