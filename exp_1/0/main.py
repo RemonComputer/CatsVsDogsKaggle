@@ -1,4 +1,5 @@
 import cv2 as cv
+from sklearn.metrics import accuracy_score
 from skimage import io, transform
 import matplotlib.pyplot as plt 
 import numpy as np
@@ -184,6 +185,7 @@ class Net(nn.Module):
         #max_pool1 = nn.MaxPool2d(kernal_size = 2)
         #self.layers.append(max_pool1)
         #output_size = 64x127x127
+        #counter intutive network but it is a start
         conv2 = nn.Conv2d(64, 32, kernal_size = 4)
         self.layers.append(conv2)
         #output_size = 32x124x124
@@ -226,6 +228,7 @@ class Net(nn.Module):
         else:
             print('Creating new model from Scratch')
         #these settings will override the state dictionary
+        self.data_loader_workers = 2
         self.model_file_path = model_file_path
         self.device = torch.device('cuda' if use_cuda_if_available and torch.cuda.is_available() else 'cpu')
         self = self.to(device) #transferring the model to the device
@@ -241,27 +244,58 @@ class Net(nn.Module):
         return labels
 
     def predict(self, input):
-        probablility = self.forward(input)
+        probablility = self(input)
         labels = self.convert_probabilities_to_labels(probablility)
         return labels
 
     def train(self, optimizer, train_dataset, test_dataset, train_batch_size = 32, test_batch_size = 128, no_ephocs = 10, \
                 model_save_intervals_in_ephocs = 5, test_accuracy_interval_in_batches = 100):
-        pass
+        criterion = nn.CrossEntropyLoss()
+        train_loader = DataLoader(train_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_load_workers)
+        test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers = self.data_load_workers)
+        
+        
 
-    def test(self, test_dataset):
-        pass
+    def test(self, test_dataset, dataset_name = 'test', batch_size = 32):
+        test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = self.data_load_workers)
+        predicted_labels = []
+        true_labels = []
+        number_of_batches = len(test_loader)
+         with torch.no_grad():
+            # enumerate on loader
+            for (i, (images, labels)) in enumerate(submission_loader):
+            	print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
+                batch_labels = self.predict(images)
+                true_labels.extend(labels)
+                # extend output list with outputs.numpy
+                predicted_labels.extend(batch_outputs)
+                # end enumeration
+           accuracy = accuracy_score(true_labels, predicted_labels) * 100
+           print('{} set accuracy: {}%'.format(dataset_name, accuracy))
+           
 
     def generate_submission_file(self, submission_dataset, submission_file_path, batch_size = 32):
         # create dataset_loader with batch size
+        submission_loader = DataLoader(submission_dataset, batch_size = batch_size, shuffle = False, num_workers = self.data_load_workers)
         # create empty id list, empty output list
-        # enumerate on loader
-        # call self(batch) to return outputs
-        # extend the id list with the labels.numpy() or as a slow iterate on labels and add them to id
-        # extend output list with outputs.numpy
-        # end enumeration 
+        ids =[]
+        outputs = []
+        number_of_batches = len(submission_loader)
+        with torch.no_grad():
+            # enumerate on loader
+            for (i, (images, labels)) in enumerate(submission_loader):
+            	print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
+                # call self(batch) to return outputs
+                batch_outputs = self(images)
+                # extend the id list with the labels.numpy() or as a slow iterate on labels and add them to id
+                ids.extend(labels)
+                # extend output list with outputs.numpy
+                outputs.extend(batch_outputs)
+                # end enumeration 
         # create dataframe that holds the {'id': id_list, 'label': output_list}
-        # dataframe.to_csv('submission_file', , index=False) 
+        submission_dataframe = DataFrame({'id':ids, 'label':outputs})
+        # dataframe.to_csv('submission_file' , index=False) 
+        submission_dataframe.to_csv(submission_file_path, index=False)
 
 if __name__ == '__main__':
     torch.manual_seed(7)
