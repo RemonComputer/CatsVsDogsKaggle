@@ -1,6 +1,8 @@
 import os
 import ntpath
 from itertools import cycle
+import itertools
+from time import time
 import cv2 as cv
 from sklearn.metrics import accuracy_score
 from skimage import io, transform
@@ -10,6 +12,7 @@ import pandas
 from pandas import DataFrame
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 import PIL
@@ -43,7 +46,7 @@ class CatsVsDogsDataset(Dataset):
         if dataset_type == 'submission':
             image_file_names = [image_file_name for image_file_name in os.listdir(images_folder_path)]
             self.images_paths = [os.path.join(images_folder_path, image_file_name) for image_file_name in image_file_names]
-            self.labels = [image_file_name.replace('.jpg', '') for image_file_name in image_file_names] #labels acts as ids in case of submission dataset
+            self.labels = [int(image_file_name.replace('.jpg', '')) for image_file_name in image_file_names] #labels acts as ids in case of submission dataset
             #self.images = [io.imread(image_path) for image_path in images_paths]
             #if transform:
                 #self.images = [transform(image) for image in self.images]
@@ -153,7 +156,7 @@ def show_image(image, mean=None, std=None):
 def convert_image_from_tensor_and_display_it(tensor_image, mean=None, std=None):
     npimage =  tensor_image.numpy()
     ndim  = npimage.ndim
-    print('Resulted numpy image shape: {}'.format(npimage.shape))
+    #print('Resulted numpy image shape: {}'.format(npimage.shape))
     if npimage.shape[0] == 1:
         ndim -= 1
         npimage = npimage[0]
@@ -180,47 +183,53 @@ class Net(nn.Module):
         #make the architect here
         self.layers = []
         #input_size = 1x256x256
-        conv1 = nn.Conv2d(1, 64, kernal_size = 3)
+        conv1 = nn.Conv2d(1, 64, kernel_size = 3)
         self.layers.append(conv1)
         #output_size = 64x254x254
-        #max_pool1 = nn.MaxPool2d(kernal_size = 2)
+        #max_pool1 = nn.MaxPool2d(kernel_size = 2)
         #self.layers.append(max_pool1)
         #output_size = 64x127x127
         #counter intutive network but it is a start
-        conv2 = nn.Conv2d(64, 32, kernal_size = 4)
+        conv2 = nn.Conv2d(64, 32, kernel_size = 4)
         self.layers.append(conv2)
         #output_size = 32x124x124
-        #max_pool2 = nn.MaxPool2d(kernal_size = 2)
+        #max_pool2 = nn.MaxPool2d(kernel_size = 2)
         #self.layers.append(max_pool2)
         #output_size = 32x62x62
-        conv3 = nn.Conv2d(32, 16, kernal_size = 3)
+        conv3 = nn.Conv2d(32, 16, kernel_size = 3)
         self.layers.append(conv3)
         #output_size = 16x60x60
-        #max_pool3 = nn.MaxPool2d(kernal_size = 2)
+        #max_pool3 = nn.MaxPool2d(kernel_size = 2)
         #self.layers.append(max_pool3)
         #output_size = 16x30x30
-        conv4 = nn.Conv2d(16, 8, kernal_size = 3)
+        conv4 = nn.Conv2d(16, 8, kernel_size = 3)
         self.layers.append(conv4)
         #output_size = 8x28x28
-        #max_pool4 = nn.MaxPool2d(kernal_size = 2)
+        #max_pool4 = nn.MaxPool2d(kernel_size = 2)
         #self.layers.append(max_pool4)
         #output_size = 8x14x14
-        conv5 = nn.Conv2d(8, 4, kernal_size = 3)
+        conv5 = nn.Conv2d(8, 4, kernel_size = 3)
         self.layers.append(conv5)
         #output_size = 4x12x12
-        #max_pool5 = nn.MaxPool2d(kernal_size = 2)
+        #max_pool5 = nn.MaxPool2d(kernel_size = 2)
         #self.layers.append(max_pool5)
         #output_size = 4x6x6
-        conv6 = nn.Conv2d(4, 2, kernal_size = 3)
+        conv6 = nn.Conv2d(4, 2, kernel_size = 3)
         self.layers.append(conv6)
         #output_size = 2x4x4
-        #max_pool6 = nn.MaxPool2d(kernal_size = 2)
+        #max_pool6 = nn.MaxPool2d(kernel_size = 2)
         #self.layers.append(max_pool6)
         #output_size = 2x2x2
-        conv7 = nn.Conv2d(2, 1, kernal_size = 2)
-        self.layers.append(conv7)
-        self.pool = nn.MaxPool2d(kernal_size = 2)
+        self.conv7 = nn.Conv2d(2, 1, kernel_size = 2)
+        #self.layers.append(conv7)
+        self.pool = nn.MaxPool2d(kernel_size = 2)
         self.sigmoid = nn.Sigmoid()
+        parameters = []
+        for layer in self.layers:
+            for parameter in layer.parameters():
+                parameters.append(parameter)
+        self.params = nn.ParameterList(parameters= parameters) #to make model.parameters() see the layer parameters so that it can optimize the layers
+ 
 
         if reload_model == True and os.path.isfile(model_file_path):
             print('Loading model from: {}'.format(model_file_path))
@@ -232,16 +241,23 @@ class Net(nn.Module):
         self.data_loader_workers = 2
         self.model_file_path = model_file_path
         self.device = torch.device('cuda' if use_cuda_if_available and torch.cuda.is_available() else 'cpu')
-        self = self.to(device) #transferring the model to the device
+        print('Model is using: {}'.format(self.device))
+        self = self.to(self.device) #transferring the model to the device
     
     def forward(self, input):
-        for layer in self.layers:
+        for (i, layer) in enumerate(self.layers):
+            #print('Classifying using layer {}, input size: {}'.format(i + 1, input.size()))
             input = self.pool(nn.functional.relu(layer(input)))
+        #print('Classifying using layer {}, input size: {}'.format(len(self.layers) + 1, input.size()))
+        input = self.conv7(input)
+        #print('Pre-sigmoid input size: {}'.format(input.size()))
         output = self.sigmoid(input)
+        #print('Network output size: {}'.format(output.size()))
+        output = output.view(-1)
         return output
     
     def convert_probabilities_to_labels(self, probablility):
-        labels = (probablility >= 0.5).long()
+        labels = (probablility >= 0.5).long().view(-1)
         return labels
 
     def predict(self, input):
@@ -252,22 +268,29 @@ class Net(nn.Module):
     def train(self, optimizer, train_dataset, test_dataset, train_batch_size = 32, test_batch_size = 128, no_ephocs = 10, \
                 model_save_intervals_in_ephocs = 5, test_accuracy_interval_in_batches = 100):
         criterion = nn.BCELoss()
-        train_loader = DataLoader(train_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_load_workers)
-        test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = False, num_workers = self.data_load_workers)
+        train_loader = DataLoader(train_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_loader_workers)
+        test_loader = DataLoader(test_dataset, batch_size = test_batch_size, shuffle = True, num_workers = self.data_loader_workers)
         number_of_training_batches = len(train_loader)
         test_iter = cycle(test_loader) # cyclic iterator
+        #test_iter = iter(test_loader)
+        training_start_time = time()
         for epoch in range(no_ephocs):  # loop over the dataset multiple times
+            epoch_start_time = time()
             running_loss = 0.0
             correct_training_example = 0.0
             total_training_examples = 0.0
             for i, data in enumerate(train_loader, 0):
+                batch_start_time = time()
+                print('epoch: %d, batch: %5d/%d' % (epoch + 1, i + 1, number_of_training_batches))
                 # get the inputs
                 inputs, labels = data
+                inputs = inputs.to(self.device)
+                labels = labels.to(self.device)
                 # zero the parameter gradients
                 optimizer.zero_grad()
                 # forward + backward + optimize
                 outputs = self(inputs)
-                loss = criterion(outputs, labels)
+                loss = criterion(outputs, labels.float())
                 loss.backward()
                 optimizer.step()
                 # print statistics
@@ -276,81 +299,123 @@ class Net(nn.Module):
                 predicted_labels = self.convert_probabilities_to_labels(outputs)
                 correct_training_example += (predicted_labels == labels).sum().item()
                 total_training_examples += labels.size(0)
-                if i % test_accuracy_interval_in_batches == 0 and i != 0:
-                    print('epoch: %d, batch: %5d' % (epoch + 1, i + 1))
+                if i % test_accuracy_interval_in_batches == 0:
+                    print('---------------------------------------------------------------------------------------------')
+                    print('epoch: %d, batch: %5d/%d' % (epoch + 1, i + 1, number_of_training_batches))
                     print('---------------------------')
                     print('Training loss: %.3f' %
                         (running_loss / test_accuracy_interval_in_batches))
                     running_loss = 0.0
-                    print('Training Accuracy: {}%%'.format(correct_training_example * 100 / total_training_examples))
+                    print('Training Accuracy: {}%'.format(correct_training_example * 100 / total_training_examples))
                     correct_training_example = 0.0
                     total_training_examples = 0.0
                     with torch.no_grad():
-                        (test_inputs, test_labels) = test_iter.next()
+                        #try:
+                        #    (test_inputs, test_labels) = next(test_iter)
+                        #except StopIteration: #to simulate indefinite cycling through test set
+                        #    test_iter = iter(test_loader)
+                        #    (test_inputs, test_labels) = next(test_iter)
+                        (test_inputs, test_labels) = next(test_iter)
+                        test_inputs = test_inputs.to(self.device)
+                        test_labels = test_labels.to(self.device)
                         test_outputs = self(test_inputs)
-                        test_loss = criterion(test_outputs, test_labels) * train_batch_size / test_batch_size 
-                        print('Test loss: {:.3f}'.format())
-                        predicted_test_labels = self.convert_probabilities_to_labels(outputs)
+                        test_loss = criterion(test_outputs, test_labels.float()) * train_batch_size / test_batch_size
+                        print('Test loss: {:.3f}'.format(test_loss))
+                        predicted_test_labels = self.convert_probabilities_to_labels(test_outputs)
                         correct_test_labels = (test_labels == predicted_test_labels).sum().item()
                         test_accuracy = correct_test_labels * 100 / test_labels.size(0)
                         print('Test accuracy: {}%%'.format(test_accuracy))
                     print('--------------------------------------------------------------------------------------------------------------------')
-            if epoch % model_save_intervals_in_ephocs == 0 and epoch != 0:
+                batch_end_time = time()
+                print('Batch took: {} seconds'.format(batch_end_time - batch_start_time))
+            if epoch % model_save_intervals_in_ephocs == 0:
                 print('Saving model at {} at the end of epoch: {} .....'.format(self.model_file_path, epoch + 1))
                 state_dict = self.state_dict()
                 torch.save(state_dict, self.model_file_path)
                 print('Model Saved')
                 print('-----------------------------------------------------------------------------------------------------------')
-        print('Finished Training')
+            epoch_end_time = time()
+            print('Epoch {} took: {} seconds'.format(epoch + 1, epoch_end_time - epoch_start_time))
+            print('----------------------------------------------------------------------------------------------------------------------')
+        print('----------------------------------------------------------------------------------------------------------------------------')
+        print('Saving model at the end of training')
+        state_dict = self.state_dict()
+        torch.save(state_dict, self.model_file_path)
+        print('Model Saved')
+        print('-----------------------------------------------------------------------------------------------------------')
+        print('Training Finished')
+        training_end_time = time()
+        print('Training for {} epochs took: {} seconds'.format(no_ephocs, training_end_time - training_start_time))
         
 
     def test(self, test_dataset, dataset_name = 'test', batch_size = 32):
-        test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = self.data_load_workers)
-        predicted_labels = []
-        true_labels = []
+        test_loader = DataLoader(test_dataset, batch_size = batch_size, shuffle = False, num_workers = self.data_loader_workers)
+        #predicted_labels = []
+        #true_labels = []
         number_of_batches = len(test_loader)
-         with torch.no_grad():
+        number_of_samples = len(test_dataset)
+        number_of_correct_samples = 0
+        print()
+        print('Testing dataset {}'.format(dataset_name))
+        print('-----------------------------------------')
+        with torch.no_grad():
             # enumerate on loader
-            for (i, (images, labels)) in enumerate(submission_loader):
-            	print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
+            for (i, (images, labels)) in enumerate(test_loader):
+                print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
+                images = images.to(self.device)
+                labels = labels.to(self.device)
                 batch_labels = self.predict(images)
-                true_labels.extend(labels)
+                number_of_correct_samples_in_batch = (batch_labels == labels).sum().item()
+                number_of_correct_samples += number_of_correct_samples_in_batch
+                #true_labels.extend(labels)
                 # extend output list with outputs.numpy
-                predicted_labels.extend(batch_outputs)
+                #predicted_labels.extend(batch_labels)
                 # end enumeration
-           accuracy = accuracy_score(true_labels, predicted_labels) * 100
-           print('{} set accuracy: {}%%'.format(dataset_name, accuracy))
+            #accuracy = accuracy_score(true_labels, predicted_labels) * 100
+            accuracy = number_of_correct_samples * 100 / number_of_samples
+            print()
+            print('{} set accuracy: {}%%'.format(dataset_name, accuracy))
+            print('----------------------------------------------------------------------------')
+            print()
            
 
     def generate_submission_file(self, submission_dataset, submission_file_path, batch_size = 32):
         # create dataset_loader with batch size
-        submission_loader = DataLoader(submission_dataset, batch_size = batch_size, shuffle = False, num_workers = self.data_load_workers)
+        submission_loader = DataLoader(submission_dataset, batch_size = batch_size, shuffle = False, num_workers = self.data_loader_workers)
         # create empty id list, empty output list
         ids =[]
         outputs = []
         number_of_batches = len(submission_loader)
+        print()
+        print('Generating Submission file:')
+        print('-----------------------------')
         with torch.no_grad():
             # enumerate on loader
             for (i, (images, labels)) in enumerate(submission_loader):
-            	print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
+                print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
+                images = images.to(self.device)
+                labels = labels.to(self.device)
                 # call self(batch) to return outputs
                 batch_outputs = self(images)
                 # extend the id list with the labels.numpy() or as a slow iterate on labels and add them to id
-                ids.extend(labels)
+                ids.extend(labels.cpu().numpy())
                 # extend output list with outputs.numpy
-                outputs.extend(batch_outputs)
+                outputs.extend(batch_outputs.cpu().numpy())
                 # end enumeration 
         # create dataframe that holds the {'id': id_list, 'label': output_list}
         submission_dataframe = DataFrame({'id':ids, 'label':outputs})
         # dataframe.to_csv('submission_file' , index=False) 
         submission_dataframe.to_csv(submission_file_path, index=False)
+        print('Submission file generated at: {}'.format(submission_file_path))
 
 if __name__ == '__main__':
     torch.manual_seed(7)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print('you are using the {}'.format(device))
+    print('is cuda available: {}'.format(torch.cuda.is_available()))
+    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #print('you are using the {}'.format(device))
     current_transform = transforms.Compose([transforms.ToPILImage(), transforms.Grayscale(), transforms.Resize((256, 256), interpolation=PIL.Image.BILINEAR),transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]) #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
-    train_dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=current_transform) 
+    train_dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=current_transform)
+    '''
     future_transform = current_transform
     trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=1,
                                           shuffle=True, num_workers=2)
@@ -359,14 +424,18 @@ if __name__ == '__main__':
     for i in range(5):
         (imgs, labels) = dataiter.next()
         print('Current image: {}'.format(class_labels[labels[0]]))
-        print('image type: {}'.format(type(imgs[0])))
+        #print('image type: {}'.format(type(imgs[0])))
         convert_image_from_tensor_and_display_it(imgs[0], 0.5, 0.5) #, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
+    '''
     #--------------------------------------------------------------------------------------------------------------
-    model = Net(model_file_path = 'model_state_dict.pytorch', reload_model=False, use_cuda_if_available=True)
-    train_dataset = CatsVsDogsDataset('test', '../../../Dataset/', transform=current_transform)
-    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    model.train(optimizer, train_dataset, test_dataset, train_batch_size = 32, test_batch_size = 128, no_ephocs = 10, model_save_intervals_in_ephocs = 2, test_accuracy_interval_in_batches = 100)
-    model.test(train_dataset, 'train', batch_size = 32)
-    model.test(test_dataset, 'test', batch_size = 32)
+    model = Net(model_file_path = 'model_state_dict.pytorch', reload_model=True, use_cuda_if_available=True)
+    test_dataset = CatsVsDogsDataset('test', '../../../Dataset/', transform=current_transform)
+    validation_dataset = CatsVsDogsDataset('validation', '../../../Dataset/', transform=current_transform)
+    model_parameters = model.parameters()
+    optimizer =  optim.SGD(model_parameters, lr=0.001, momentum=0.9)
+    model.train(optimizer, train_dataset, test_dataset, train_batch_size = 64, test_batch_size = 64, no_ephocs = 10, model_save_intervals_in_ephocs = 2, test_accuracy_interval_in_batches = 10)
+    model.test(train_dataset, 'train', batch_size = 64)
+    model.test(test_dataset, 'test', batch_size = 64)
+    model.test(validation_dataset, 'validation', batch_size = 64)
     submission_dataset = CatsVsDogsDataset('submission', '../../../Dataset/', transform=current_transform)
-    model.generate_submission_file(submission_dataset, 'submission.csv')
+    model.generate_submission_file(submission_dataset, 'submission.csv', batch_size = 64)
