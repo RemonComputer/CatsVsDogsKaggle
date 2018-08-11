@@ -432,7 +432,7 @@ if __name__ == '__main__':
     test_dataset = CatsVsDogsDataset('test', '../../../Dataset/', transform=current_transform)
     validation_dataset = CatsVsDogsDataset('validation', '../../../Dataset/', transform=current_transform)
     model_parameters = model.parameters()
-    optimizer =  optim.SGD(model_parameters, lr=0.001, momentum=0.9)
+    optimizer =  optim.SGD(model_parameters, lr=0.01, momentum=0.9)
     model.train(optimizer, train_dataset, test_dataset, train_batch_size = 64, test_batch_size = 64, no_ephocs = 10, model_save_intervals_in_ephocs = 2, test_accuracy_interval_in_batches = 10)
     model.test(train_dataset, 'train', batch_size = 64)
     model.test(test_dataset, 'test', batch_size = 64)
