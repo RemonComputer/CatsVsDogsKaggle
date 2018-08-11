@@ -229,7 +229,7 @@ class Net(nn.Module):
             for parameter in layer.parameters():
                 parameters.append(parameter)
         self.params = nn.ParameterList(parameters= parameters) #to make model.parameters() see the layer parameters so that it can optimize the layers
- 
+
 
         if reload_model == True and os.path.isfile(model_file_path):
             print('Loading model from: {}'.format(model_file_path))
@@ -324,7 +324,7 @@ class Net(nn.Module):
                         predicted_test_labels = self.convert_probabilities_to_labels(test_outputs)
                         correct_test_labels = (test_labels == predicted_test_labels).sum().item()
                         test_accuracy = correct_test_labels * 100 / test_labels.size(0)
-                        print('Test accuracy: {}%%'.format(test_accuracy))
+                        print('Test accuracy: {}%'.format(test_accuracy))
                     print('--------------------------------------------------------------------------------------------------------------------')
                 batch_end_time = time()
                 print('Batch took: {} seconds'.format(batch_end_time - batch_start_time))
@@ -374,7 +374,7 @@ class Net(nn.Module):
             #accuracy = accuracy_score(true_labels, predicted_labels) * 100
             accuracy = number_of_correct_samples * 100 / number_of_samples
             print()
-            print('{} set accuracy: {}%%'.format(dataset_name, accuracy))
+            print('{} set accuracy: {}%'.format(dataset_name, accuracy))
             print('----------------------------------------------------------------------------')
             print()
            
