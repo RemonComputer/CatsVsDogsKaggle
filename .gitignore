@@ -118,3 +118,6 @@ venv.bak/
 
 # Model Weights File
 *.pytorch   
+
+#log files
+*.log
