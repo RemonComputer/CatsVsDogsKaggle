@@ -22,3 +22,7 @@ The Goal of the Exp is to setup the training and testing procedures and try basi
 - What stopped me from understanding that it was a learning rate problem was that the accuracy on patches kept jumping back and forth, And I assumed that when a learning rate problem happens is that the accuracy should increase by small amount every time but it was jumping because I am using mini-batchs not all the dataset so the result was a little bit noisy
 - I think the previous network had the same issue (I solved the issue see 0/ for details)
 - Final Trainig set accuracy: 98.995%, Final Test set accuracy: 88.32%, Final validation set accuracy: 89.52% So clearly the network over fits and need some form of regularization or smaller number of parameters 
+
+## 2/
+- Still the network overfits even after penalizing it with large L1 Regularization Criterion
+- After training it for 50 epochs with batch size = 128 and sparse factor = 1e-1, I obtained: train set accuracy: 99.995%, test set accuracy: 85.76%, validation set accuracy: 86.76%
