@@ -25,4 +25,10 @@ The Goal of the Exp is to setup the training and testing procedures and try basi
 
 ## 2/
 - Still the network overfits even after penalizing it with large L1 Regularization Criterion
-- After training it for 50 epochs with batch size = 128 and sparse factor = 1e-1, I obtained: train set accuracy: 99.995%, test set accuracy: 85.76%, validation set accuracy: 86.76%
+- After training it for 50 epochs with batch size = 128 and sparse factor = 1e-1, I obtained: train set accuracy: 99.995%, test set accuracy: 85.76%, validation set accuracy: 86.76
+
+## 3/
+- Added Randomization before selecting the training, test, validation sets because I suspected the nature of the train, test, validation sets wasn't the same, This is bacuse it seems that number of misclassifed images in the train, test, validation to be 480 image
+- Increased the learning rate from 0.01 to 0.1 because the network seemed not to learn after randomization of the datasets
+- Tried the data augmentation to increase the accuracy of the network and it worked
+- After traininig on the augmented training set for 50 epochs and 10 epochs on non-augemted dataset I obtained: train set accuracy: 95.865%, test set accuracy: 95.44%, validation set accuracy: 95.08%
