@@ -32,3 +32,11 @@ The Goal of the Exp is to setup the training and testing procedures and try basi
 - Increased the learning rate from 0.01 to 0.1 because the network seemed not to learn after randomization of the datasets
 - Tried the data augmentation to increase the accuracy of the network and it worked
 - After traininig on the augmented training set for 50 epochs and 10 epochs on non-augemted dataset I obtained: train set accuracy: 95.865%, test set accuracy: 95.44%, validation set accuracy: 95.08%
+
+## 4/
+- Tried Advanced Optimizers like Adam at an approperiate learning rate 1e-4 it seams mostly like it takes steady steps towards convergence. 
+- Tried using the color channels but multiplied the wights by 3 .
+- Trained the network for 8 hours and 16 minutes for 107 iterations.
+- At the end the performance of the network was vibrating from 95% to 98% on the test batches so I added a few lines to quit training if the test accuracy passed 98%.
+- Finaly I obtained a performance of: train set accuracy: 99.835%, test set accuracy: 97.24%, validation set accuracy: 97.28%
+- You can find the Pre-Trained model at: https://drive.google.com/file/d/1RGW67-YOb2yFQfgCpvMEgrdzJd2r6rl7/view?usp=sharing 
