@@ -3,6 +3,7 @@ import ntpath
 from itertools import cycle
 import itertools
 import random
+import copy
 from time import time
 import cv2 as cv
 from sklearn.metrics import accuracy_score
@@ -15,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
+from torchvision import transforms, utils, models
 from torch.autograd import Variable
 import PIL
 
@@ -185,6 +186,7 @@ def convert_image_from_tensor_and_display_it(tensor_image, mean=None, std=None):
 class Net(nn.Module):
     def __init__(self, model_file_path = 'model_state_dic.pytorch', reload_model = True, use_cuda_if_available = True):
         super(Net, self).__init__()
+        '''
         #make the architect here
         self.layers = []
         #input_size = 1x256x256
@@ -238,7 +240,7 @@ class Net(nn.Module):
         self.flat = nn.Linear(3*1024, 1)
         #self.flat = nn.Linear(1024, 1)
         self.pool = nn.MaxPool2d(kernel_size = 2)
-        self.output_function = nn.Sigmoid()
+        #self.output_function = nn.Sigmoid()
         #self.output_function = nn.ReLU()
         #self.output_function = nn.LeakyReLU()
         parameters = []
@@ -246,7 +248,17 @@ class Net(nn.Module):
             for parameter in layer.parameters():
                 parameters.append(parameter)
         self.params = nn.ParameterList(parameters= parameters) #to make model.parameters() see the layer parameters so that it can optimize the layers
+        '''
+        # Here I will write the model
+        self.pretrainedModel = models.resnet18(pretrained=True)
+        for param in self.pretrainedModel.parameters():
+            param.requires_grad = False
 
+        num_ftrs = self.pretrainedModel.fc.in_features
+        # Parameters of newly constructed modules have requires_grad=True by default
+        self.pretrainedModel.fc = nn.Linear(num_ftrs, 1)
+
+        self.output_function = nn.Sigmoid()
 
         if reload_model == True and os.path.isfile(model_file_path):
             print('Loading model from: {}'.format(model_file_path))
@@ -255,13 +267,14 @@ class Net(nn.Module):
         else:
             print('Creating new model from Scratch')
         #these settings will override the state dictionary
-        self.data_loader_workers = 2
+        self.data_loader_workers = 4
         self.model_file_path = model_file_path
         self.device = torch.device('cuda' if use_cuda_if_available and torch.cuda.is_available() else 'cpu')
         print('Model is using: {}'.format(self.device))
         self = self.to(self.device) #transferring the model to the device
     
     def forward(self, input):
+        '''
         for (i, layer) in enumerate(self.layers):
             #print('Classifying using layer {}, input size: {}'.format(i + 1, input.size()))
             input = self.pool(nn.functional.relu(layer(input)))
@@ -274,6 +287,12 @@ class Net(nn.Module):
         #print('Network output size: {}'.format(output.size()))
         output = output.view(-1)
         return output
+        '''
+        #infer from the model here
+        output = self.pretrainedModel(input)
+        output = output.view(-1)
+        output = self.output_function(output)
+        return output
     
     def convert_probabilities_to_labels(self, probablility):
         labels = (probablility >= 0.5).long().view(-1)
@@ -284,7 +303,7 @@ class Net(nn.Module):
         labels = self.convert_probabilities_to_labels(probablility)
         return labels
 
-    def train(self, optimizer, train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 10, \
+    def myTrainining(self, optimizer, train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 10, \
                 test_accuracy_interval_in_epocs = 1, display_training_metrics_in_batches = 10):
         training_start_time = time()
         criterion = nn.BCELoss()
@@ -292,21 +311,67 @@ class Net(nn.Module):
         #    if param.requires_grad:
         #        print('Parameter name: {}, data: {}'.format(name, param.data))
         #criterion = nn.MSELoss()
-        weights = []
-        sparsity_targets = []
-        for param in model.parameters():
-            if param.requires_grad and param.data.dim() > 1: #I am excluding biases
-                weights.append(param)
-                sparsity_targets.append(Variable(torch.zeros_like(param.data)))
-        regularization_criteria = nn.L1Loss()
-        regularization_factor = 1e-1
+        #weights = []
+        #sparsity_targets = []
+        #for param in model.parameters():
+        #    if param.requires_grad and param.data.dim() > 1: #I am excluding biases
+        #        weights.append(param)
+        #        sparsity_targets.append(Variable(torch.zeros_like(param.data)))
+        #regularization_criteria = nn.L1Loss()
+        #regularization_factor = 1e-1
         train_loader = DataLoader(train_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_loader_workers)
         test_loader = DataLoader(test_dataset, batch_size = train_batch_size, shuffle = True, num_workers = self.data_loader_workers)
         number_of_training_batches = len(train_loader)
         #test_iter = cycle(test_loader) # cyclic iterator
         #test_iter = iter(test_loader)
         best_model_loss = float('inf')
+        best_model_state = None
         for epoch in range(no_ephocs):  # loop over the dataset multiple times
+            # Validating
+            # Validation is done  before Training To validate a newly uploaded model before corrupting it
+            if epoch % test_accuracy_interval_in_epocs == 0:
+                self.eval()
+                with torch.no_grad():
+                    total_test_examples = 0
+                    correct_test_examples = 0
+                    test_loss = 0
+                    validation_start_time = time()
+                    number_of_test_batches  = len(test_loader)
+                    print('-------------------------------')
+                    print('Validating...')
+                    print('--------------')
+                    for i, test_data in enumerate(test_loader, 0):
+                        print('epoch: %d, test batch: %5d/%d' % (epoch + 1, i + 1, number_of_test_batches))
+                        # get the inputs
+                        test_inputs, test_labels = test_data
+                        test_inputs = test_inputs.to(self.device)
+                        test_labels = test_labels.to(self.device)
+                        test_outputs = self(test_inputs)
+                        test_loss += criterion(test_outputs, test_labels.float()).item()
+                        # calculate the acumulated test accuracy
+                        predicted_test_labels = self.convert_probabilities_to_labels(test_outputs)
+                        current_correct_test_examples =  (predicted_test_labels == test_labels).sum().item()
+                        correct_test_examples += current_correct_test_examples
+                        total_test_examples += test_labels.size(0)
+                    validation_end_time = time()
+                    validation_loss = test_loss / total_test_examples
+                    test_accuracy = correct_test_examples * 100 / total_test_examples
+                    validation_time = validation_end_time - validation_start_time
+                    print('--------------------------------')
+                    print('Validation metrics:')
+                    print('--------------------')
+                    print('Validation loss: {}'.format(validation_loss))
+                    print('Validation Accuracy: {}%'.format(test_accuracy))
+                    print('Validation Took: {} seconds'.format(validation_time))
+                    if best_model_loss > validation_loss:
+                        best_model_loss = validation_loss
+                        print('Best Model obtained so far .. Saving Model...')
+                        state_dict = self.state_dict()
+                        best_model_state = copy.deepcopy(state_dict)
+                        torch.save(state_dict, self.model_file_path)
+                        print('Model Saved')
+                    print('---------------------------------')
+             # Training
             self.train()
             epoch_start_time = time()
             running_loss = 0.0
@@ -327,6 +392,7 @@ class Net(nn.Module):
                 #regularization_loss = 0
                 #for (param, target) in zip(weights, sparsity_targets):
                     #regularization_loss += regularization_criteria(param, target)
+                #print('output size: {}, label size: {}'.format(str(outputs.size()), str(labels.size())))
                 loss = criterion(outputs, labels.float()) #+ regularization_factor * regularization_loss
                 loss.backward()
                 optimizer.step()
@@ -390,7 +456,7 @@ class Net(nn.Module):
                     print('--------------------------------------------------------------------------------------------------------------------')
                 '''
                 batch_end_time = time()
-                accumulated_batch_time += (batch_start_time - batch_end_time)
+                accumulated_batch_time += (batch_end_time - batch_start_time)
                 #print('Batch took: {} seconds'.format(batch_end_time - batch_start_time))
             #Zeroeing parameters so that values don't pass from epoch to another 
             running_loss = 0.0
@@ -405,47 +471,6 @@ class Net(nn.Module):
                 print('Model Saved')
                 print('-----------------------------------------------------------------------------------------------------------')
             '''
-            if epoch % test_accuracy_interval_in_epocs == 0:
-                self.eval()
-                with torch.no_grad():
-                    total_test_examples = 0
-                    correct_test_examples = 0
-                    test_loss = 0
-                    validation_start_time = time()
-                    number_of_test_batches  = len(test_loader)
-                    print('-------------------------------')
-                    print('Validating...')
-                    print('--------------')
-                    for i, test_data in enumerate(test_loader, 0):
-                        print('epoch: %d, test batch: %5d/%d' % (epoch + 1, i + 1, number_of_test_batches))
-                        # get the inputs
-                        test_inputs, test_labels = test_data
-                        test_inputs = test_inputs.to(self.device)
-                        test_labels = test_labels.to(self.device)
-                        test_outputs = self(inputs)
-                        test_loss += criterion(test_outputs, test_labels.float()).item()
-                        # calculate the acumulated test accuracy
-                        predicted_test_labels = self.convert_probabilities_to_labels(outputs)
-                        current_correct_test_examples =  (predicted_test_labels == test_labels).sum().item()
-                        correct_test_examples += current_correct_test_examples
-                        total_test_examples += test_labels.size(0)
-                    validation_end_time = time()
-                    validation_loss = test_loss / total_test_examples
-                    test_accuracy = correct_test_examples * 100 / total_test_examples
-                    validation_time = validation_end_time - validation_start_time
-                    print('--------------------------------')
-                    print('Validation metrics:')
-                    print('--------------------')
-                    print('Validation loss: {}'.format(validation_loss))
-                    print('Validation Accuracy: {}%'.format(test_accuracy))
-                    print('Validation Took: {} seconds'.format(validation_time))
-                    if best_model_loss > validation_loss:
-                        best_model_loss = validation_loss
-                        print('Best Model obtained so far .. Saving Model...')
-                        state_dict = self.state_dict()
-                        torch.save(state_dict, self.model_file_path)
-                        print('Model Saved')
-                    print('---------------------------------')
             epoch_end_time = time()
             print('Epoch {} took: {} seconds'.format(epoch + 1, epoch_end_time - epoch_start_time))
             print('----------------------------------------------------------------------------------------------------------------------')
@@ -454,47 +479,51 @@ class Net(nn.Module):
         #state_dict = self.state_dict()
         #torch.save(state_dict, self.model_file_path)
         #print('Model Saved')
-        if no_ephocs % test_accuracy_interval_in_epocs != 0:
-            self.eval()
-            with torch.no_grad():
-                total_test_examples = 0
-                correct_test_examples = 0
-                test_loss = 0
-                validation_start_time = time()
-                number_of_test_batches  = len(test_loader)
-                print('-------------------------------')
-                print('Validating...')
-                print('--------------')
-                for i, test_data in enumerate(test_loader, 0):
-                    print('epoch: %d, test batch: %5d/%d' % (epoch + 1, i + 1, number_of_test_batches))
-                    # get the inputs
-                    test_inputs, test_labels = test_data
-                    test_inputs = test_inputs.to(self.device)
-                    test_labels = test_labels.to(self.device)
-                    test_outputs = self(inputs)
-                    test_loss += criterion(test_outputs, test_labels.float()).item()
-                    # calculate the acumulated test accuracy
-                    predicted_test_labels = self.convert_probabilities_to_labels(outputs)
-                    current_correct_test_examples =  (predicted_test_labels == test_labels).sum().item()
-                    correct_test_examples += current_correct_test_examples
-                    total_test_examples += test_labels.size(0)
-                validation_end_time = time()
-                validation_loss = test_loss / total_test_examples
-                test_accuracy = correct_test_examples * 100 / total_test_examples
-                validation_time = validation_end_time - validation_start_time
-                print('--------------------------------')
-                print('Validation metrics:')
-                print('--------------------')
-                print('Validation loss: {}'.format(validation_loss))
-                print('Validation Accuracy: {}%'.format(test_accuracy))
-                print('Validation Took: {} seconds'.format(validation_time))
-                if best_model_loss > validation_loss:
-                    best_model_loss = validation_loss
-                    print('Best Model obtained so far .. Saving Model...')
-                    state_dict = self.state_dict()
-                    torch.save(state_dict, self.model_file_path)
-                    print('Model Saved')
-                print('---------------------------------')
+        #if no_ephocs % test_accuracy_interval_in_epocs != 0:
+        # Validate the model at the end of training
+        self.eval()
+        with torch.no_grad():
+            total_test_examples = 0
+            correct_test_examples = 0
+            test_loss = 0
+            validation_start_time = time()
+            number_of_test_batches  = len(test_loader)
+            print('-------------------------------')
+            print('Validating...')
+            print('--------------')
+            for i, test_data in enumerate(test_loader, 0):
+                print('epoch: %d, test batch: %5d/%d' % (epoch + 1, i + 1, number_of_test_batches))
+                # get the inputs
+                test_inputs, test_labels = test_data
+                test_inputs = test_inputs.to(self.device)
+                test_labels = test_labels.to(self.device)
+                test_outputs = self(test_inputs)
+                test_loss += criterion(test_outputs, test_labels.float()).item()
+                # calculate the acumulated test accuracy
+                predicted_test_labels = self.convert_probabilities_to_labels(test_outputs)
+                current_correct_test_examples =  (predicted_test_labels == test_labels).sum().item()
+                correct_test_examples += current_correct_test_examples
+                total_test_examples += test_labels.size(0)
+            validation_end_time = time()
+            validation_loss = test_loss / total_test_examples
+            test_accuracy = correct_test_examples * 100 / total_test_examples
+            validation_time = validation_end_time - validation_start_time
+            print('--------------------------------')
+            print('Validation metrics:')
+            print('--------------------')
+            print('Validation loss: {}'.format(validation_loss))
+            print('Validation Accuracy: {}%'.format(test_accuracy))
+            print('Validation Took: {} seconds'.format(validation_time))
+            if best_model_loss > validation_loss:
+                best_model_loss = validation_loss
+                print('Best Model obtained so far .. Saving Model...')
+                state_dict = self.state_dict()
+                best_model_state = copy.deepcopy(state_dict)
+                torch.save(state_dict, self.model_file_path)
+                print('Model Saved')
+            print('---------------------------------')
+        if best_model_state:
+            self.load_state_dict(best_model_state)
         print('-----------------------------------------------------------------------------------------------------------')
         print('Training Finished')
         training_end_time = time()
@@ -511,23 +540,30 @@ class Net(nn.Module):
         print()
         print('Testing dataset {}'.format(dataset_name))
         print('-----------------------------------------')
+        criterion = nn.BCELoss()
+        loss = 0.0
+        self.eval()
         with torch.no_grad():
             # enumerate on loader
             for (i, (images, labels)) in enumerate(test_loader):
                 print('Processing batch {}/{} . . .'.format(i + 1, number_of_batches))
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                batch_labels = self.predict(images)
+                outputs = self(images)
+                #batch_labels = self.predict(images)
+                batch_labels = self.convert_probabilities_to_labels(outputs)
                 number_of_correct_samples_in_batch = (batch_labels == labels).sum().item()
                 number_of_correct_samples += number_of_correct_samples_in_batch
+                loss += criterion(outputs, labels.float()).item()
                 #true_labels.extend(labels)
                 # extend output list with outputs.numpy
                 #predicted_labels.extend(batch_labels)
                 # end enumeration
             #accuracy = accuracy_score(true_labels, predicted_labels) * 100
             accuracy = number_of_correct_samples * 100 / number_of_samples
-            print()
+            average_loss = loss / number_of_samples
             print('{} set accuracy: {}%'.format(dataset_name, accuracy))
+            print('{} set average loss: {}'.format(dataset_name, average_loss))
             print('----------------------------------------------------------------------------')
             print()
            
@@ -542,6 +578,7 @@ class Net(nn.Module):
         print()
         print('Generating Submission file:')
         print('-----------------------------')
+        self.eval()
         with torch.no_grad():
             # enumerate on loader
             for (i, (images, labels)) in enumerate(submission_loader):
@@ -578,7 +615,7 @@ if __name__ == '__main__':
     #, transforms.Grayscale()
     train_transform = transforms.Compose([transforms.ToPILImage(),
                                           #transforms.Grayscale(),
-                                          transforms.Resize((256, 256), interpolation = PIL.Image.BILINEAR),
+                                          transforms.Resize((224, 224), interpolation = PIL.Image.BILINEAR),
                                           transforms.ColorJitter(),
                                           transforms.RandomAffine(degrees = 15, translate=(0.1, 0.1), scale=(0.5, 2), resample = PIL.Image.NEAREST),
                                           transforms.RandomHorizontalFlip(p=0.5),
@@ -586,7 +623,7 @@ if __name__ == '__main__':
                                           transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     test_transform = transforms.Compose([transforms.ToPILImage(),
                                          #transforms.Grayscale(),
-                                         transforms.Resize((256, 256), interpolation=PIL.Image.BILINEAR),
+                                         transforms.Resize((224, 224), interpolation=PIL.Image.BILINEAR),
                                          transforms.ToTensor(),
                                          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     augmented_train_dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=train_transform)
@@ -606,13 +643,13 @@ if __name__ == '__main__':
     model = Net(model_file_path = 'model_state_dict.pytorch', reload_model=True, use_cuda_if_available=True)
     test_dataset = CatsVsDogsDataset('test', '../../../Dataset/', transform=test_transform)
     validation_dataset = CatsVsDogsDataset('validation', '../../../Dataset/', transform=test_transform)
-    model_parameters = model.parameters()
+    model_parameters = model.pretrainedModel.fc.parameters()
     #optimizer =  optim.SGD(model_parameters, lr=0.01, momentum=0.9)
     optimizer = optim.Adam(model_parameters, lr=0.0001)
     #optimizer, train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 10, \
     #            test_accuracy_interval_in_epocs = 1, display_training_metrics_in_batches = 10
-    model.train(optimizer, augmented_train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 5, test_accuracy_interval_in_epocs = 1, \
-                    display_training_metrics_in_batches = 10)
+    #model.myTrainining(optimizer, augmented_train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 115, \
+                       #test_accuracy_interval_in_epocs = 1, display_training_metrics_in_batches = 10)
     #model.print_model_parameters()
     original_train_dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=test_transform)
     model.test(original_train_dataset, 'train', batch_size = 32)
