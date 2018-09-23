@@ -648,8 +648,8 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model_parameters, lr=0.0001)
     #optimizer, train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 10, \
     #            test_accuracy_interval_in_epocs = 1, display_training_metrics_in_batches = 10
-    #model.myTrainining(optimizer, augmented_train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 115, \
-                       #test_accuracy_interval_in_epocs = 1, display_training_metrics_in_batches = 10)
+    model.myTrainining(optimizer, augmented_train_dataset, test_dataset, train_batch_size = 32, no_ephocs = 115, \
+                       test_accuracy_interval_in_epocs = 1, display_training_metrics_in_batches = 10)
     #model.print_model_parameters()
     original_train_dataset = CatsVsDogsDataset('train', '../../../Dataset/', transform=test_transform)
     model.test(original_train_dataset, 'train', batch_size = 32)
