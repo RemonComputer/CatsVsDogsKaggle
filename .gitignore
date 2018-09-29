@@ -117,7 +117,10 @@ venv.bak/
 .idea/
 
 # Model Weights File
-*.pytorch   
+*.pytorch 
+
+# New Model Weights File
+*.pth    
 
 #log files
 *.log
